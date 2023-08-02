@@ -1,0 +1,72 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xrdvirtualmachines.ssorato.crossplane
+spec:
+  group: ssorato.crossplane
+  names:
+    kind: XRDVirtualMachine
+    plural: xrdvirtualmachines
+  claimNames:
+    kind: VirtualMachineClaim
+    plural: virtualmachineclaims
+  defaultCompositeDeletePolicy: Foreground
+  defaultCompositionRef:
+    name: virtualmachine-aws
+  defaultCompositionUpdatePolicy: Automatic
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            properties:
+              parameters:
+                type: object
+                description: Virtual machine parameters 
+                properties:
+                  name:
+                    type: string
+                    description: The name of the virtual machine
+                  vmSize:
+                    type: string
+                    description: The size of the virtual machine
+                  region:
+                    type: string
+                    description: The region of the virtual machine
+                  sshPublicKey:
+                    type: string
+                    description: The ssh public key
+                  myPublicIP:
+                    type: string
+                    description: My public IP - get it by executing curl ifconfig.me
+                required:
+                  - name
+                  - vmSize
+                  - sshPublicKey
+                  - myPublicIP
+          status:
+            type: object
+            properties:
+              private_ip:
+                description: The private address of the virtual machine
+                type: string
+              public_ip:
+                description: The public address of the virtual machine
+                type: string
+              public_ip_id:
+                description: The public address ID of the virtual machine
+                type: string
+    additionalPrinterColumns:
+    - name: private_ip
+      type: string
+      description: The private address of the virtual machine
+      jsonPath: ".status.private_ip"
+    - name: public_ip
+      type: string
+      description: The public address of the virtual machine
+      jsonPath: ".status.public_ip"

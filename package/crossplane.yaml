@@ -1,0 +1,15 @@
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: multicloud-vm
+spec:
+  crossplane:
+    version: ">=v1.12"
+  dependsOn:
+    - package: xpkg.upbound.io/upbound/provider-azure-compute
+      version: ">=v0.33.0"
+    - package: xpkg.upbound.io/upbound/provider-azure-network
+      version: ">=v0.33.0"
+    - package: xpkg.upbound.io/upbound/provider-aws-ec2
+      version: ">=v0.37.0"
+

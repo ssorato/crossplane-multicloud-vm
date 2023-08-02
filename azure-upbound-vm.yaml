@@ -1,0 +1,12 @@
+apiVersion: ssorato.crossplane/v1alpha1
+kind: VirtualMachineClaim
+metadata:
+  name: azure-vm
+spec:
+  compositionSelector:
+    matchLabels:
+      provider: upbound-azure
+  parameters:
+    name: azure-vm
+    vmSize: small
+    region: us

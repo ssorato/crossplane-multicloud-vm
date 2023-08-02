@@ -1,0 +1,8 @@
+apiVersion: pkg.crossplane.io/v1
+kind: Configuration
+metadata:
+  name: multicloud-vm
+spec:
+  package: ssorato/crossplane-multicloud-vm:v1.0.0
+  skipDependencyResolution: true
+

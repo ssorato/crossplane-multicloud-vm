@@ -1,0 +1,13 @@
+apiVersion: ssorato.crossplane/v1alpha1
+kind: VirtualMachineClaim
+metadata:
+  name: aws-vm
+spec:
+  compositionSelector:
+    matchLabels:
+      provider: upbound-aws
+  parameters:
+    name: aws-vm
+    vmSize: small
+    region: us
+

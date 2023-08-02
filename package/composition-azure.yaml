@@ -1,0 +1,330 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: virtualmachine-azure
+  labels:
+    crossplane.io/xrd: xrdvirtualmachines.ssorato
+    provider: upbound-azure
+spec:
+  compositeTypeRef:
+    apiVersion: ssorato.crossplane/v1alpha1
+    kind: XRDVirtualMachine
+  writeConnectionSecretsToNamespace: crossplane-system
+  resources:
+  - name: resourceGroup
+    base:
+      apiVersion: azure.upbound.io/v1beta1
+      kind: ResourceGroup
+      metadata:
+        labels:
+          crossplane.io/object-name: resourceGroupVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-rg"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-rg"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: virtualNetwork
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: VirtualNetwork
+      metadata:
+        labels:
+          crossplane.io/object-name: virtualNetworkVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          addressSpace:
+            - 10.0.0.0/16
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-vnet"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-vnet"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: subNetwork
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: Subnet
+      metadata:
+        labels:
+          crossplane.io/object-name: subNetworkVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          virtualNetworkNameSelector:
+            matchLabels:
+              crossplane.io/object-name: virtualNetworkVm
+          addressPrefixes:
+            - 10.0.1.0/24
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-subnet"
+
+  - name: securityGroup
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: SecurityGroup
+      metadata:
+        labels:
+          crossplane.io/object-name: securityGroupVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          securityRule:
+            - name: AllowSshFromMyIP
+              priority: 100
+              access: Allow
+              protocol: Tcp
+              direction: Inbound
+              sourcePortRange: "*"
+              destinationAddressPrefix: VirtualNetwork
+              destinationPortRange: "22"
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.myPublicIP
+        toFieldPath: spec.forProvider.securityRule[0].sourceAddressPrefix
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: securityGroupAssociation
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: SubnetNetworkSecurityGroupAssociation
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          networkSecurityGroupIdSelector:
+            matchLabels:
+              crossplane.io/object-name: securityGroupVm
+          subnetIdSelector:
+            matchLabels:
+                crossplane.io/object-name: subNetworkVm
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-nsg"
+
+  - name: publicIP
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: PublicIP
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        providerRef:
+          name: upbound-provider-azure-network
+        forProvider:
+          sku: Basic
+          allocationMethod: Dynamic
+          ipVersion: IPv4
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.id
+        toFieldPath: status.public_ip_id
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-public-ip"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-public-ip"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: linuxVirtualMachineNic
+    base:
+      apiVersion: network.azure.upbound.io/v1beta1
+      kind: NetworkInterface
+      metadata:
+        labels:
+          crossplane.io/object-name: nicVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          ipConfiguration:
+            - name: vm-nic-config-crossplane
+              privateIpAddressAllocation: Dynamic
+              subnetIdSelector:
+                matchLabels:
+                  crossplane.io/object-name: subNetworkVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: status.public_ip_id
+        toFieldPath: spec.forProvider.ipConfiguration[0].publicIpAddressId
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-nic"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-nic"
+      - type: PatchSet
+        patchSetName: location
+
+
+  - name: linuxVirtualMachine
+    base:
+      apiVersion: compute.azure.upbound.io/v1beta1
+      kind: LinuxVirtualMachine
+      metadata:
+        name: crossplane-vm
+      spec:
+        providerConfigRef:
+          name: upbound-config-azure
+        forProvider:
+          resourceGroupNameSelector:
+            matchLabels:
+              crossplane.io/object-name: resourceGroupVm
+          adminSshKey:
+            - username: sandbox
+          adminUsername: sandbox
+          disablePasswordAuthentication: true
+          sourceImageReference:
+            - offer: 0001-com-ubuntu-server-jammy
+              publisher: Canonical
+              sku: 22_04-lts-gen2
+              version: latest
+          osDisk:
+            - caching: ReadWrite
+              name: vm-osdisk-crossplane
+              storageAccountType: Standard_LRS
+          networkInterfaceIdsSelector:
+            matchLabels:
+              crossplane.io/object-name: nicVm
+          tags:
+            created-by: Crossplane
+            Name: crossplane-vm
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.sshPublicKey
+        toFieldPath: spec.forProvider.adminSshKey[0].publicKey
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.vmSize
+        toFieldPath: spec.forProvider.size
+        transforms:
+        - type: map
+          map:
+            small: Standard_B1s
+            medium: Standard_B2s
+            large: Standard_B2ms
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.privateIpAddress
+        toFieldPath: status.private_ip
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.publicIpAddress
+        toFieldPath: status.public_ip
+      - fromFieldPath: spec.id
+        toFieldPath: spec.forProvider.tags.Name
+      - type: PatchSet
+        patchSetName: location
+
+  patchSets:
+    - name: location
+      patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.region
+        toFieldPath: spec.forProvider.location
+        transforms:
+        - type: map
+          map:
+            us: East US
+            br: Brazil South

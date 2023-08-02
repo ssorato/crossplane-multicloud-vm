@@ -1,0 +1,426 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: virtualmachine-aws
+  labels:
+    crossplane.io/xrd: xrdvirtualmachines.ssorato
+    provider: upbound-aws
+spec:
+  compositeTypeRef:
+    apiVersion: ssorato.crossplane/v1alpha1
+    kind: XRDVirtualMachine
+  writeConnectionSecretsToNamespace: crossplane-system
+  resources:
+  - name: virtualNetwork
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: VPC
+      metadata:
+        labels:
+          crossplane.io/object-name: virtualNetworkVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          cidrBlock: 10.0.0.0/16
+          enableDnsHostnames: true
+          enableDnsSupport: true
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-vpc"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-vpc"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: securityGroup
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: SecurityGroup
+      metadata:
+        labels:
+          crossplane.io/object-name: securityGroupVm
+      spec:
+        deletionPolicy: Delete
+        providerConfigRef:
+            name: upbound-config-aws
+        forProvider:
+          description: VM secury group
+          name: vmSecurityGroup
+          vpcIdSelector:
+            matchLabels:
+              crossplane.io/object-name: virtualNetworkVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: securityGroupRuleInSSH
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: SecurityGroupRule
+      spec:
+        providerConfigRef:
+            name: upbound-config-aws
+        deletionPolicy: Delete
+        forProvider:
+          securityGroupIdSelector:
+            matchLabels:
+              crossplane.io/object-name: securityGroupVm
+          description: Allow ssh from my public IP
+          fromPort: 22
+          protocol: tcp
+          toPort: 22
+          type: ingress
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg-ssh-in-rule"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.myPublicIP
+        toFieldPath: spec.forProvider.cidrBlocks[0]
+      - type: PatchSet
+        patchSetName: location
+
+  - name: securityGroupRuleOutbound
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: SecurityGroupRule
+      spec:
+        providerConfigRef:
+            name: upbound-config-aws
+        deletionPolicy: Delete
+        forProvider:
+          securityGroupIdSelector:
+            matchLabels:
+              crossplane.io/object-name: securityGroupVm
+          description: Allow outbound traffic
+          fromPort: -1
+          protocol: all
+          toPort: -1
+          cidrBlocks:
+            - 0.0.0.0/0
+          type: egress
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-sg-out-rule"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: subNetwork
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: Subnet
+      metadata:
+        labels:
+          crossplane.io/object-name: subNetworkVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          vpcIdSelector:
+            matchLabels:
+              crossplane.io/object-name: virtualNetworkVm
+          cidrBlock: 10.0.0.0/24
+          mapPublicIpOnLaunch: true
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-subnet"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.region
+        toFieldPath: spec.forProvider.availabilityZone
+        transforms:
+        - type: map
+          map:
+            us: us-east-1a
+            br: sa-east-1a
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-subnet"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: internetGateway
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: InternetGateway
+      metadata:
+        labels:
+          crossplane.io/object-name: internetGwVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          vpcIdSelector:
+            matchLabels:
+              crossplane.io/object-name: virtualNetworkVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-igw"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-igw"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: routingTable
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: RouteTable
+      metadata:
+        labels:
+          crossplane.io/object-name: routeTableVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          vpcIdSelector:
+            matchLabels:
+              crossplane.io/object-name: virtualNetworkVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-rtb"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-rtb"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: routeToInternet
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: Route
+      spec:
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          destinationCidrBlock: 0.0.0.0/0
+          gatewayIdSelector:
+            matchLabels:
+              crossplane.io/object-name: internetGwVm
+          routeTableIdSelector:
+            matchLabels:
+              crossplane.io/object-name: routeTableVm
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-route-igw"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: routeTableAssociation
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: RouteTableAssociation
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          routeTableIdSelector:
+            matchLabels:
+              crossplane.io/object-name: routeTableVm
+          subnetIdSelector:
+            matchLabels:
+              crossplane.io/object-name: subNetworkVm
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-rtb-subnet"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: linuxVirtualMachineNic
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: NetworkInterface
+      metadata:
+        labels:
+          crossplane.io/object-name: nicVm
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          subnetIdSelector:
+            matchLabels:
+              crossplane.io/object-name: subNetworkVm
+          securityGroupSelector:
+            matchLabels:
+              crossplane.io/object-name: securityGroupVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-nic"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-nic"
+      - type: PatchSet
+        patchSetName: location
+
+  - name: linuxVirtualMachineKeyPair
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: KeyPair
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-keypair"
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.sshPublicKey
+        toFieldPath: spec.forProvider.publicKey
+      - type: PatchSet
+        patchSetName: location
+
+  - name: linuxVirtualMachine
+    base:
+      apiVersion: ec2.aws.upbound.io/v1beta1
+      kind: Instance
+      spec:
+        providerConfigRef:
+          name: upbound-config-aws
+        forProvider:
+          ami: ami-06ca3ca175f37dd66
+          networkInterface:
+            - deviceIndex: 0
+              networkInterfaceIdSelector:
+                matchLabels:
+                  crossplane.io/object-name: nicVm
+          tags:
+            created-by: Crossplane
+    patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: metadata.name
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.tags.Name
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.vmSize
+        toFieldPath: spec.forProvider.instanceType
+        transforms:
+        - type: map
+          map:
+            small: t2.micro
+            medium: t2.medium
+            large: t2.large
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.privateIp
+        toFieldPath: status.private_ip
+      - type: ToCompositeFieldPath
+        fromFieldPath: status.atProvider.publicIp
+        toFieldPath: status.public_ip
+      - type: PatchSet
+        patchSetName: location
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.name
+        toFieldPath: spec.forProvider.keyName
+        transforms:
+          - type: string
+            string:
+              fmt: "%s-keypair"
+  
+  patchSets:
+    - name: location
+      patches:
+      - type: FromCompositeFieldPath
+        fromFieldPath: spec.parameters.region
+        toFieldPath: spec.forProvider.region
+        transforms:
+        - type: map
+          map:
+            us: us-east-1
+            br: sa-east-1
